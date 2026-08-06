@@ -8,5 +8,5 @@ RUN apt-get install pip systemctl python3-venv -y
 RUN apt-get install python3-numpy -y
 RUN python3 -m venv .venv --system-site-packages
 RUN source .venv/bin/activate
-RUN pip install pymodbus
+RUN pip install pymodbus paho-mqtt
 CMD python3 rtu-speaker.py

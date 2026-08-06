@@ -4,12 +4,21 @@ version: '2'
 networks:
   proxiable:
     name: proxiable
+    ipam:
+      config:
+        # Explicit subnet (rather than an auto-picked one) so audit-sidecar/
+        # can attach with a known, stable IP and self-identify which
+        # challenge network it's listening on. See docs/ADMIN.md's sidecar
+        # section and audit-sidecar/README.md.
+        - subnet: 172.30.0.0/24
 
 name: cps-final-project
 services:
   plc:
     build: ./OpenPLC_v3/
     image: plc
+    networks:
+      - proxiable
     ports:
       - 5000:502
       - 9000:8080
@@ -20,7 +29,35 @@ services:
     build: ./rtu/
     image: rtu
     restart: always
-    ports:
-      - 8888:8888
-      - 8889:8889
+    networks:
+      - proxiable
+    # No ports published here: rtu-speaker.py is a client of hmi.py's
+    # sockets (it connects out to HMI_HOST:HMI_PORT/HMI_SPEAKER_PORT below),
+    # it doesn't listen on anything itself. hmi.py is what binds 8888/8889,
+    # directly on the host - see ../startup.sh and ../hmi.py.
     container_name: rtu-container
+    environment:
+      # PLC is reached by compose service name on the internal Modbus port
+      # (502), not the host-published port (5000) below.
+      PLC_HOST: plc
+      PLC_PORT: "502"
+      # hmi.py runs on the host itself (see ../startup.sh), so it's reached
+      # via Docker's host-gateway hostname rather than a hardcoded IP.
+      HMI_HOST: host.docker.internal
+      HMI_PORT: "8888"
+      HMI_SPEAKER_PORT: "8889"
+      # Which Modbus coil to read for the turbine's on/off state, and
+      # which viz dashboard zone to publish it to - see
+      # docs/PINOUT_MAP.md and rtu-speaker.py's TURBINE_COIL_ADDR comment
+      # for why the address is a best-effort default, not a verified one.
+      TURBINE_COIL_ADDR: "10"
+      ZONE: zone5
+      # viz's Mosquitto broker lives in a separate compose project and is
+      # reached via its host-published port, same pattern as HMI_HOST.
+      MQTT_BROKER_HOST: host.docker.internal
+      MQTT_BROKER_PORT: "1883"
+    extra_hosts:
+      # Required on Linux Docker Engine for host.docker.internal to
+      # resolve; harmless no-op on Docker Desktop (Mac/Windows), which
+      # already provides it natively.
+      - "host.docker.internal:host-gateway"

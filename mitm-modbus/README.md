@@ -95,3 +95,9 @@ control on a shared network.
 ```bash
 docker compose up
 ```
+
+For setup, functional testing, and how this ties into the shared
+dashboard, see [`docs/ADMIN.md`](../docs/ADMIN.md). For how to actually
+run the attack, see [`attacker/README.md`](attacker/README.md). If you're
+a player looking for where to start, see
+[`docs/PLAYER.md`](../docs/PLAYER.md).
