@@ -1,9 +1,46 @@
 version: "3.5"
+
+networks:
+  default:
+    # Explicit subnet (rather than an auto-picked one) so audit-sidecar/
+    # can attach with a known, stable IP and self-identify which challenge
+    # network it's listening on. See docs/ADMIN.md's sidecar section and
+    # audit-sidecar/README.md.
+    ipam:
+      config:
+        - subnet: 172.32.0.0/24
+
 services:
-  
-    
-  mqtt:
-    image: jtsmart/mqtthelper
-    links:
-      - mqtt
-      # need all other containers?
+  # Previously named "mqtt", built from a public "jtsmart/mqtthelper"
+  # image (not this repo's own Dockerfile) with a `links: [mqtt]` entry
+  # that linked the service to itself. Neither ran any of the code in
+  # this directory. Renamed and fixed to actually build and run
+  # MQTTHelper.py.
+  mqtthelper:
+    build: .
+    restart: on-failure
+    environment:
+      # Which GPIO pins to monitor and which dashboard zone each reports
+      # to - see docs/PINOUT_MAP.md.
+      MQTTHELPER_PIN_1: "13"
+      MQTTHELPER_ZONE_1: "zone3"
+      MQTTHELPER_PIN_2: "19"
+      MQTTHELPER_ZONE_2: "zone4"
+      # The three actual challenges (not mqtthelper's own generic pins) -
+      # once all three report Down/green (0), zone3/zone4 go offline too,
+      # regardless of what's wired to pins 33/35. See docs/PINOUT_MAP.md.
+      CHALLENGE_ZONES: "zone1,zone2,zone5"
+      # viz's Mosquitto broker lives in a separate compose project and is
+      # reached via its host-published port, same pattern used by
+      # bh-intellirupter/dnpchallenge/mitm-modbus.
+      MQTT_BROKER_HOST: host.docker.internal
+      MQTT_BROKER_PORT: "1883"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Real GPIO passthrough for the Pi. Off a Pi, /dev/gpiomem doesn't
+    # exist - Docker will bind-mount an empty placeholder directory
+    # instead of failing, so this is safe to leave in for simulation too;
+    # MQTTHelper.py's GPIO mock fallback handles the rest.
+    privileged: true
+    volumes:
+      - /dev/gpiomem:/dev/gpiomem

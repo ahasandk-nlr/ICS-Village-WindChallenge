@@ -1,4 +1,5 @@
 flask
+scapy
 pymodbus==3.6.8
-paho-mqtt
-RPi.GPIO
+requests
+psutil
