@@ -59,7 +59,6 @@ and the [`viz`](#5-viz--grid-dashboard) dashboard renders those zones on the Den
 | [`mitm-modbus`](#3-mitm-modbus--modbus-man-in-the-middle) | Modbus/TCP · ettercap | ARP poisoning + packet filters that silently flip Modbus write values | container `502` Modbus |
 | [`mqtthelper`](#4-mqtthelper--gpiomqtt-bridge) | MQTT · Raspberry Pi GPIO | Bridging physical I/O to the dashboard | `1883` MQTT |
 | [`viz`](#5-viz--grid-dashboard) | Node.js · Socket.IO · MQTT · Mosquitto | The shared 16‑zone grid dashboard and TLS MQTT broker | `3000` HTTPS, `1883/8443` MQTT |
-| `sri-fixed` | OpenPLC | Git submodule — a second checkout of the OpenPLC_v3 runtime (same pinned commit as `bh-intellirupter/OpenPLC_v3`) | — |
 
 Each folder has its own `README.md` with the full details, wiring, and objective.
 
@@ -163,7 +162,6 @@ ICS-Village-WindChallenge/
 ├── mitm-modbus/        # Modbus master/slave + ettercap MITM filters
 ├── mqtthelper/         # Raspberry Pi GPIO → MQTT bridge
 ├── viz/                # Node.js grid dashboard + Mosquitto MQTT broker
-├── sri-fixed/          # Git submodule → OpenPLC_v3 runtime
 └── .gitmodules         # Submodule definitions (OpenPLC_v3)
 ```
 
