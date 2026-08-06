@@ -1,7 +1,7 @@
 # bh‑intellirupter — OpenPLC turbine protection (Modbus/TCP)
 
 A wind‑turbine **protection / recloser** challenge built on an
-[OpenPLC](https://openplc.org/) soft‑PLC. The PLC runs an IEC 61131‑3 Structured Text
+[OpenPLC](https://autonomylogic.com/) soft‑PLC. The PLC runs an IEC 61131‑3 Structured Text
 program that trips the turbine after repeated faults; an RTU polls the PLC over
 Modbus/TCP and streams a simulated power reading to an operator HMI. The Modbus/TCP
 interface (and the OpenPLC web UI) is the attack surface.

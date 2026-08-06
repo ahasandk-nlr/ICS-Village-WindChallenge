@@ -71,7 +71,7 @@ Each folder has its own `README.md` with the full details, wiring, and objective
 
 ## 1. `bh-intellirupter` — OpenPLC turbine protection
 
-An [OpenPLC](https://openplc.org/) soft‑PLC runs a Structured Text protection program
+An [OpenPLC](https://autonomylogic.com/) soft‑PLC runs a Structured Text protection program
 ([`fixedfinal.st`](bh-intellirupter/fixedfinal.st)) that watches a turbine and *trips*
 it after repeated faults. An RTU ([`rtu/rtu-speaker.py`](bh-intellirupter/rtu/rtu-speaker.py))
 polls the PLC over Modbus/TCP, streams a simulated power value to the operator HMI
@@ -189,5 +189,5 @@ aware of before reusing any of it:
 - [OT-Sim](https://ot-sim.patsec.dev/) by **PatriaSecurity LLC** powers the DNP3
   challenge — software emulation tools like OT-Sim are what make challenges like this
   possible.
-- [OpenPLC](https://openplc.org/) provides the soft‑PLC runtime for the Modbus challenge.
+- [OpenPLC](https://autonomylogic.com/) provides the soft‑PLC runtime for the Modbus challenge.
 - Visualisation and scenario theming initially developed by [NLR](https://www.nlr.gov/) for the [ICS Village](https://icsvillage.com/) at [DEFCON 32](https://defcon.org/html/defcon-32/dc-32-index.html).
