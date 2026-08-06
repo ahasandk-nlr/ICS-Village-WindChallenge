@@ -1,10 +1,6 @@
 # mitm‑modbus — Modbus man‑in‑the‑middle
 
-A challenge that demonstrates on‑path tampering of **Modbus/TCP** control traffic. A
-Modbus **master** periodically sends a shutdown command to a **slave** (outstation)
-that drives GPIO and reports state to MQTT. Sitting between them with `ettercap` and a
-packet filter, you can silently rewrite the command on the wire so the operator's intent
-never reaches the device.
+A challenge that demonstrates on‑path tampering of **Modbus/TCP** control traffic. A Modbus **master** periodically sends a shutdown command to a **slave** (outstation) that drives GPIO and reports state to MQTT. Sitting between them is an `attacker` box with `ettercap` (reachable from a browser at port 7681, no login needed) so you can ARP-poison the link between them and alter traffic in flight with the provided filter (`etter.filter.modbus`), silently rewriting the command on the wire so the operator's intent never reaches the device.
 
 ## Components
 

@@ -1,12 +1,12 @@
 # dnpchallenge — DNP3 turbine e‑stop (OT‑Sim)
 
+> If you know what this is, you are in the right place — otherwise, leave. 🙂
+
 A [DNP3](https://en.wikipedia.org/wiki/DNP3) challenge modelling a turbine controlled
 over a master ⇄ outstation link, built on [OT-Sim](https://ot-sim.patsec.dev/). One
 node is the **master/RTU** (with a Telnet console and an emergency‑stop workflow); the
 other is the **outstation/IED** that actually drives the turbine. The goal is to reach
 and manipulate the DNP3 control points — "HACK the turbine".
-
-> If you know what this is, you are in the right place — otherwise, leave. 🙂
 
 ## Components
 
@@ -117,3 +117,7 @@ With thanks to **PatriaSecurity LLC** for assistance with modifications to
 [OT-Sim](https://ot-sim.patsec.dev/ "Operational Technology (OT) Simulator Documentation").
 Software emulation tools like OT-Sim are what make challenges like this one possible —
 give them a try in your own projects, too!
+
+For setup, functional testing, and how this challenge ties into the shared
+dashboard, see [`docs/ADMIN.md`](../docs/ADMIN.md). If you're a player
+looking for where to start, see [`docs/PLAYER.md`](../docs/PLAYER.md).
