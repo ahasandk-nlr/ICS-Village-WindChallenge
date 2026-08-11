@@ -37,12 +37,20 @@ flowchart LR
     Broker(("MQTT broker\nMosquitto / TLS"))
     VIZ["viz\nGrid dashboard (16 zones)"]
 
+    AUDIT["audit-sidecar\ntraffic view + read/write · web :8000"]
+
     BH --> MQH
     DNP --> VH
     MITM --> Broker
     MQH --> Broker
     VH --> Broker
     Broker --> VIZ
+
+    BH -. tap .-> AUDIT
+    DNP -. tap .-> AUDIT
+    MITM -. tap .-> AUDIT
+    MQH -. tap .-> AUDIT
+    VIZ -. tap .-> AUDIT
 ```
 
 The **shared plumbing** is MQTT: every challenge reports zone state to an MQTT broker,
@@ -59,13 +67,14 @@ and the [`viz`](#5-viz--grid-dashboard) dashboard renders those zones on the Den
 | [`mitm-modbus`](#3-mitm-modbus--modbus-man-in-the-middle) | Modbus/TCP · ettercap | ARP poisoning + packet filters that silently flip Modbus write values | container `502` Modbus |
 | [`mqtthelper`](#4-mqtthelper--gpiomqtt-bridge) | MQTT · Raspberry Pi GPIO | Bridging physical I/O to the dashboard | `1883` MQTT |
 | [`viz`](#5-viz--grid-dashboard) | Node.js · Socket.IO · MQTT · Mosquitto | The shared 16‑zone grid dashboard and TLS MQTT broker | `3000` HTTPS, `1883/8443` MQTT |
+| [`audit-sidecar`](#6-audit-sidecar--cross-challenge-traffic-view-and-control) | scapy · Flask · pymodbus | *Shared tooling, not a challenge.* One page to watch traffic across every challenge network and read/write the points that matter for each | `8000` web UI |
 
 Each folder has its own `README.md` with the full details, wiring, and objective.
 
-> **Submodules.** `bh-intellirupter/OpenPLC_v3` and `sri-fixed` are Git submodules that
-> pull in the [OpenPLC_v3](https://github.com/thiagoralves/OpenPLC_v3) runtime. Clone
-> with `git clone --recurse-submodules …`, or in an existing clone run
-> `git submodule update --init` to populate them.
+> **Submodules.** `bh-intellirupter/OpenPLC_v3` is a Git submodule that pulls in the
+> [OpenPLC_v3](https://github.com/thiagoralves/OpenPLC_v3) runtime. Clone with
+> `git clone --recurse-submodules …`, or in an existing clone run
+> `git submodule update --init` to populate it.
 
 ---
 
@@ -115,11 +124,31 @@ WebSockets, and paints a 4×4 grid of zones over a Denver map — red = *Normal*
 green = *Down*. This is the shared scoreboard every other challenge reports into. Full
 details in [`viz/README.md`](viz/README.md).
 
+## 6. `audit-sidecar` — cross-challenge traffic view and control
+
+*Shared tooling, not a challenge.* Every challenge runs on its own private Docker bridge
+network, so none of that internal Modbus/DNP3/MQTT traffic ever reaches a physical wire a
+participant could sniff (see [`docs/AUDIT.md`](docs/AUDIT.md) Part 3). The audit sidecar
+([`sidecar.py`](audit-sidecar/sidecar.py)) attaches to *every* challenge network at once —
+the way a shared SPAN/tap port would on a real switch — and serves a single page at
+`http://<host>:8000` where participants can:
+
+- **watch a live, best‑effort‑decoded traffic feed** across all five challenge networks,
+  tagged by challenge (Modbus function codes and cleartext Telnet are decoded; DNP3 and
+  anything else show as raw hex), and
+- **read and write the specific protocol points** that finish each challenge — Modbus
+  coils/registers via `pymodbus`, and `dnpchallenge`'s OT‑Sim tags via its HTTP API
+  ([`challenges.py`](audit-sidecar/challenges.py) lists the exposed points).
+
+Bring it up **after** every challenge stack, since it joins their networks by name. Full
+details, limitations, and the security caveat are in
+[`audit-sidecar/README.md`](audit-sidecar/README.md).
+
 ---
 
 ## Getting started
 
-First, make sure the OpenPLC submodules are checked out (see [Submodules](#challenges-at-a-glance)):
+First, make sure the OpenPLC submodule is checked out (see [Submodule](#challenges-at-a-glance)):
 
 ```bash
 git submodule update --init   # or clone with --recurse-submodules
@@ -139,6 +168,9 @@ Recommended order for standing up the environment:
 2. **A field challenge** — bring up `bh-intellirupter`, `dnpchallenge`, or `mitm-modbus`.
 3. **Bridges** — `mqtthelper` / `vizhelper` if you are wiring physical or simulated I/O
    into the dashboard.
+4. **`audit-sidecar`** (optional, last) — once every challenge network exists, bring this
+   up to observe and interact with all of them from one page at `http://localhost:8000`.
+   See [`audit-sidecar/README.md`](audit-sidecar/README.md).
 
 Some components (`rtu-speaker.py`, `hmi.py`, the DNP3 GPIO configs) use **static field
 IP addresses** and Raspberry Pi GPIO, reflecting the physical hardware used at the live
@@ -157,12 +189,14 @@ match your setup — see each challenge README.
 
 ```
 ICS-Village-WindChallenge/
+├── audit-sidecar/      # Cross-challenge traffic view + read/write control panel
 ├── bh-intellirupter/   # OpenPLC + Modbus turbine protection challenge
 ├── dnpchallenge/       # OT-Sim DNP3 master/outstation e-stop challenge
 ├── mitm-modbus/        # Modbus master/slave + ettercap MITM filters
 ├── mqtthelper/         # Raspberry Pi GPIO → MQTT bridge
 ├── viz/                # Node.js grid dashboard + Mosquitto MQTT broker
-└── .gitmodules         # Submodule definitions (OpenPLC_v3)
+├── docs/               # Repo audit, admin, player, and pinout notes
+└── .gitmodules         # Submodule definition (OpenPLC_v3)
 ```
 
 ---
@@ -181,6 +215,11 @@ aware of before reusing any of it:
   point of the exercises — not a template to copy.
 - **Offensive tooling.** The ettercap filters perform on‑path tampering. Only use them
   on an isolated lab network against these challenge devices.
+- **Unauthenticated control panel.** The optional `audit-sidecar` serves an
+  unauthenticated page on port `8000` that can *write* live challenge state (trip coils,
+  clear faults, flip the e‑stop tag). Anyone who can reach that port can disrupt another
+  participant's attempt — gate it behind your exhibit's access control, or lock down the
+  `POST /api/write/...` endpoints, if that's a concern.
 
 ---
 
