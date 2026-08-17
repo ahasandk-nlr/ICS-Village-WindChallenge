@@ -34,10 +34,37 @@ The corresponding client can be started as:
 """
 import asyncio
 import logging
+import os
 import sys
 import time
 import paho.mqtt.client as mqtt
-import RPi.GPIO as GPIO
+
+try:
+    import RPi.GPIO as GPIO
+except (ImportError, RuntimeError) as exc:
+    # RPi.GPIO raises RuntimeError (not just ImportError) off real Pi
+    # hardware, so this needs to catch both. Falls back to a no-op mock so
+    # this module can still run - and be tested - off a Raspberry Pi (e.g.
+    # in this repo's simulation environment). On real hardware this branch
+    # never triggers; the actual import above succeeds instead.
+    print(f"RPi.GPIO unavailable ({exc}), using no-op GPIO mock")
+
+    class _MockGPIO:
+        BCM = "BCM"
+        OUT = "OUT"
+        HIGH = 1
+        LOW = 0
+
+        def setmode(self, mode):
+            print(f"[mock GPIO] setmode({mode})")
+
+        def setup(self, pin, mode):
+            print(f"[mock GPIO] setup(pin={pin}, mode={mode})")
+
+        def output(self, pin, value):
+            print(f"[mock GPIO] output(pin={pin}, value={value})")
+
+    GPIO = _MockGPIO()
 
 try:
     import helper
@@ -62,8 +89,13 @@ from pymodbus.server import (
     StartAsyncTlsServer,
     StartAsyncUdpServer,
 )
+# BCM12 (physical pin 32) - CH3 in docs/PINOUT_MAP.md. Was previously set
+# up as pin 17 here while changeON() below wrote to pin 12, a mismatch
+# that made changeON() raise "channel not set up" the moment it ran.
+RELAY_PIN = int(os.environ.get("RELAY_PIN", "12"))
+
 GPIO.setmode(GPIO.BCM)  # Use BCM pin numbering
-GPIO.setup(17, GPIO.OUT)
+GPIO.setup(RELAY_PIN, GPIO.OUT)
 
 
 
@@ -223,33 +255,80 @@ async def run_async_server(args):
     return server
 
 async def shutdown_coil(args):
+    """Continuously mirror coil 1's real value onto the physical relay/
+    dashboard: True (the value master.py's keep-alive write sets, and what
+    Ettercap's filter tampers with) means the turbine keeps running; False
+    means stopped.
+
+    This used to be one-directional (only ever called changeON(0), never
+    changeON(1)) and read the wrong Modbus datastore entirely - see the
+    two comments below for what was actually wrong and why.
+    """
     while True:
         print("Waiting 5 seconds")
-        time.sleep(5)
+        # time.sleep() here would block the whole asyncio event loop -
+        # including the Modbus server this coroutine runs alongside - for
+        # the full 5 seconds on every iteration. asyncio.sleep() yields
+        # control back to the loop instead.
+        await asyncio.sleep(5)
         print("Reading value")
-        shutdown = args.context[0].getValues(2,1,count=1)[0]
-        print("Reading shutdown " + shutdown)
-        if shutdown == 0:
-            changeON(0)
+        # fx=1 reads the *coils* datastore - the one master.py's
+        # write_coil(1, True) and Ettercap's filter actually touch. This
+        # previously used fx=2 (discrete inputs), a separate datastore
+        # nothing in this codebase ever writes to (it stays at its
+        # initial placeholder value, 17, forever) - so this could never
+        # actually detect anything, confirmed by testing: with fx=2, this
+        # print statement's value never changed no matter what master
+        # wrote or Ettercap altered.
+        coil_value = args.context[0].getValues(1, 1, count=1)[0]
+        print(f"coil 1 (keep-alive) reads: {coil_value}")
+        # Previously only ever called changeON(0) here, never changeON(1)
+        # - meaning once triggered (including a false trigger from reading
+        # the coil's default False value before master's first write
+        # lands, a real race at boot) the relay could never turn back on
+        # even once the coil read True again. Mirroring the value both
+        # ways makes this self-correcting.
+        changeON(1 if coil_value else 0)
 
-        
+
+# mqtt's broker is viz's Mosquitto instance, reached the same way
+# bh-intellirupter/dnpchallenge reach services outside their own compose
+# project: via Docker's host-gateway hostname and viz's host-published
+# port (see docker-compose.yml's extra_hosts entry for this service).
+MQTT_BROKER_HOST = os.environ.get("MQTT_BROKER_HOST", "host.docker.internal")
+MQTT_BROKER_PORT = int(os.environ.get("MQTT_BROKER_PORT", "1883"))
+
+# viz's Mosquitto doesn't set `require_certificate true` (see
+# viz/mosquitto.conf), so it never asks connecting clients for a client
+# certificate - only the CA used to verify viz's own server certificate is
+# needed here. See mqtt-certs/CERTS.md for why this is a copy of viz's
+# actual CA rather than this module's own previously-mismatched one.
+CA_CERT = os.path.join(os.path.dirname(__file__), "mqtt-certs", "ca.pem")
+
 
 def changeON(on):
-    CA_CERT = 'mqtt-certs/ca-cert.pem'  # Path to your CA certificate
-    CLIENT_CERT = 'mqtt-certs/client-cert.pem'  # Path to your client certificate (optional)
-    CLIENT_KEY = 'mqtt-certs/client-key.pem' 
-    client = mqtt.Client()
-    client.tls_set(ca_certs=CA_CERT, certfile=CLIENT_CERT, keyfile=CLIENT_KEY)
-    client.tls_insecure_set(True)
-    client.connect("0.0.0.0", 1883, 60)
-    client.loop_start()
-    client.publish("zone1", on)
-    client.loop_stop()
+    # The dashboard being unreachable (viz not started yet, briefly down,
+    # etc.) shouldn't be fatal here - this function runs before the Modbus
+    # server even starts (see async_helper()), so letting an MQTT error
+    # propagate would previously crash the whole slave before it ever
+    # opened its Modbus port.
+    try:
+        client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+        client.tls_set(ca_certs=CA_CERT)
+        client.tls_insecure_set(True)  # skip hostname check; CA validation still applies
+        client.connect(MQTT_BROKER_HOST, MQTT_BROKER_PORT, 60)
+        client.loop_start()
+        client.publish("zone1", on)
+        client.loop_stop()
+        client.disconnect()
+    except OSError as exc:
+        _logger.warning(f"couldn't reach MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}: {exc}")
+
     if on == 0:
-        GPIO.output(12,GPIO.LOW)
+        GPIO.output(RELAY_PIN, GPIO.LOW)
         _logger.info("gpio off")
-    else: 
-        GPIO.output(12,GPIO.HIGH)
+    else:
+        GPIO.output(RELAY_PIN, GPIO.HIGH)
         _logger.info("gpio on")
 
 
@@ -265,9 +344,17 @@ async def async_helper():
     
     run_args = setup_server(description="Run asynchronous server.")
     print("monitoring the coil")
-    await run_async_server(run_args)
-    shutdown_coil(run_args)
-    ## need to monitor the coils
+    # run_async_server() does NOT return once the Modbus server starts -
+    # pymodbus's StartAsyncTcpServer() awaits the server's serve-forever
+    # loop internally, for the lifetime of the process. Previously this
+    # was `await run_async_server(run_args)` followed by
+    # `shutdown_coil(run_args)` (missing its own `await` too) - meaning
+    # shutdown_coil() could never even start, since the line before it
+    # never finishes. Confirmed directly: with the old code, shutdown_coil
+    # never printed anything even minutes after startup, despite the
+    # Modbus server itself working fine. asyncio.gather() runs both
+    # concurrently instead of one-after-the-other.
+    await asyncio.gather(run_async_server(run_args), shutdown_coil(run_args))
 
 if __name__ == "__main__":
     asyncio.run(async_helper(), debug=True)

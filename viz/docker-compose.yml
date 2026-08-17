@@ -1,10 +1,25 @@
 version: "3.5"
 
+networks:
+  default:
+    # Explicit subnet (rather than an auto-picked one) so audit-sidecar/
+    # can attach with a known, stable IP and self-identify which challenge
+    # network it's listening on. See docs/ADMIN.md's sidecar section and
+    # audit-sidecar/README.md.
+    ipam:
+      config:
+        - subnet: 172.33.0.0/24
+
 services:
   https:
     build:
       context: .
       dockerfile: Dockerfile
+    environment:
+      # Which venue map to show: "map.png" (Las Vegas) or "denMap.png"
+      # (Denver) - both already ship in public/. See docs/ADMIN.md for
+      # the full switching procedure.
+      MAP_IMAGE: denMap.png
     ports:
       - "3000:3000"
 

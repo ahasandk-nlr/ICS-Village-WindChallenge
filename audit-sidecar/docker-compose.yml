@@ -1,0 +1,49 @@
+# Bring up every challenge stack FIRST (bh-intellirupter, dnpchallenge,
+# mitm-modbus, mqtthelper, viz) so their networks exist, then bring this
+# up. Docker errors on `external: true` networks that don't exist yet.
+#
+# This container joins every challenge's network as an additional member,
+# the same way a shared span/tap port would on real hardware - each
+# challenge's own network stays independent from the others; this is just
+# one more thing attached to all of them at once, purely to observe/
+# interact, not to route between them.
+services:
+  sidecar:
+    build: .
+    container_name: audit-sidecar
+    restart: unless-stopped
+    # NET_ADMIN/NET_RAW (rather than full `privileged`) is the minimum
+    # capability set scapy needs to sniff on all these interfaces.
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    ports:
+      - "8000:8000"
+    networks:
+      bh-intellirupter:
+        ipv4_address: 172.30.0.9
+      dnpchallenge:
+        ipv4_address: 172.31.0.9
+      mitm-modbus:
+        ipv4_address: 172.20.0.9
+      mqtthelper:
+        ipv4_address: 172.32.0.9
+      viz:
+        ipv4_address: 172.33.0.9
+
+networks:
+  bh-intellirupter:
+    external: true
+    name: proxiable
+  dnpchallenge:
+    external: true
+    name: dnpchallenge_default
+  mitm-modbus:
+    external: true
+    name: mitm-modbus_my_network
+  mqtthelper:
+    external: true
+    name: mqtthelper_default
+  viz:
+    external: true
+    name: viz_default

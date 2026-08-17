@@ -28,6 +28,44 @@ app.use(
   })
 );
 
+// ---------------------------------------------------------------------
+// Which venue map to show (public/map.png = Las Vegas, public/denMap.png
+// = Denver). Previously hardcoded as a literal filename in
+// public/index.html's <img src>, which meant switching venues meant
+// editing and redeploying frontend source. Now a one-line env var change
+// - see docker-compose.yml's MAP_IMAGE and docs/ADMIN.md.
+// ---------------------------------------------------------------------
+const MAP_IMAGE = process.env.MAP_IMAGE || 'denMap.png';
+app.get('/map-config.js', (req, res) => {
+  res.type('application/javascript').send(`window.MAP_IMAGE = ${JSON.stringify(MAP_IMAGE)};`);
+});
+
+// ---------------------------------------------------------------------
+// Which zones actually exist, where they sit on the map, and which
+// challenge each one belongs to. Single source of truth for the MQTT
+// subscription list below, the canvas overlay, and the side panel - all
+// three used to independently hardcode zones 1..16 in a fixed 4x4 grid
+// covering the whole map, most of which nothing ever published to.
+//
+// Positions are hand-placed to cluster over each map's downtown/city-core
+// area rather than tile the whole canvas - sizes and placement are
+// deliberately uneven, not a grid. The three shipped maps (map.png /
+// denMap.png / ftcMap.png) don't have their downtown areas at identical
+// pixel coordinates, so this is a reasonable shared compromise across all
+// three, not a pixel-perfect match to any one of them - re-tune per-map
+// if that precision ever matters.
+// ---------------------------------------------------------------------
+const ZONES = [
+  { num: 1, x: 770, y: 640, w: 220, h: 170, label: 'mitm-modbus' },
+  { num: 2, x: 1010, y: 640, w: 220, h: 170, label: 'dnpchallenge' },
+  { num: 3, x: 730, y: 830, w: 140, h: 110, label: 'mqtthelper (pin 33)' },
+  { num: 4, x: 1150, y: 830, w: 140, h: 110, label: 'mqtthelper (pin 35)' },
+  { num: 5, x: 890, y: 830, w: 240, h: 180, label: 'bh-intellirupter' },
+];
+app.get('/zone-config.js', (req, res) => {
+  res.type('application/javascript').send(`window.ZONES = ${JSON.stringify(ZONES)};`);
+});
+
 // Serve static files (index.html, main.js, images, etc.) from the "public" folder
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -58,9 +96,11 @@ const mqttClient = mqtt.connect({
 mqttClient.on('connect', () => {
   console.log('Node.js -> MQTT broker connected');
   
-  // Subscribe to zones 1..16
-  for (let i = 1; i <= 16; i++) {
-    const topic = `zone${i}`;
+  // Subscribe only to zones something actually publishes to (see ZONES
+  // above) - previously subscribed to zone1..zone16 unconditionally, 11
+  // of which nothing has ever published to.
+  for (const zone of ZONES) {
+    const topic = `zone${zone.num}`;
     mqttClient.subscribe(topic, (err) => {
       if (err) {
         console.error(`Error subscribing to ${topic}:`, err.message);

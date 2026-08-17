@@ -10,6 +10,7 @@ The corresponding server must be started before e.g. as:
     python3 master.py
 """
 import asyncio
+import os
 import time
 import pymodbus.client as ModbusClient
 from pymodbus import (
@@ -20,12 +21,12 @@ from pymodbus import (
 )
 
 
-async def run_async_slave(comm, host, port, framer=Framer.SOCKET):
+async def run_async_master(comm, host, port, framer=Framer.SOCKET):
     """Run async client."""
     # activate debugging
     pymodbus_apply_logging_config("INFO")
 
-    print("get client" + comm)
+    print("get client " + comm)
     if comm == "tcp":
         client = ModbusClient.AsyncModbusTcpClient(
             host,
@@ -41,10 +42,6 @@ async def run_async_slave(comm, host, port, framer=Framer.SOCKET):
             host,
             port=port,
             framer=framer,
-            # timeout=10,
-            # retries=3,
-            # retry_on_empty=False,
-            # source_address=None,
         )
     elif comm == "serial":
         client = ModbusClient.AsyncModbusSerialClient(
@@ -52,26 +49,18 @@ async def run_async_slave(comm, host, port, framer=Framer.SOCKET):
             framer=framer,
             timeout=10000000,
             retries=100000,
-            # retry_on_empty=False,
-            # strict=True,
             baudrate=9600,
             bytesize=8,
             parity="N",
             stopbits=1,
-            # handle_local_echo=False,
         )
     elif comm == "tls":
         client = ModbusClient.AsyncModbusTlsClient(
             host,
             port=port,
             framer=Framer.TLS,
-            # timeout=10,
-            # retries=3,
-            # retry_on_empty=False,
-            # sslctx=sslctx,
             certfile="../examples/certificates/pymodbus.crt",
             keyfile="../examples/certificates/pymodbus.key",
-            # password="none",
             server_hostname="localhost",
         )
     else:
@@ -79,45 +68,44 @@ async def run_async_slave(comm, host, port, framer=Framer.SOCKET):
         return
 
     print("connect to server")
-    await client.connect()
-    # test client is connected
-    assert client.connected
+    # slave may not be up yet (no depends_on health check between the two
+    # services) - retry instead of crashing outright on the first attempt.
+    while not client.connected:
+        await client.connect()
+        if not client.connected:
+            print("could not connect yet, retrying in 5s")
+            await asyncio.sleep(5)
 
     print("get and verify data")
-    try:
-        # See all calls in client_calls.py
-        while True:
-            time.sleep(5)
+    # Keep writing coil 1 True every 5s, retrying indefinitely on any
+    # Modbus-level error instead of the previous duplicated
+    # try/except-with-a-second-copy-of-the-loop, which also left an
+    # unreachable isError()/ExceptionResponse check after both loops that
+    # could never be reached (and would reference `rr` before it was ever
+    # assigned, if the very first write raised).
+    while True:
+        await asyncio.sleep(5)
+        try:
             rr = await client.write_coil(1, True)
-            ## awaiting to see if the coil is shutdown
-            print(rr)
-            print("restarting")
+        except ModbusException as exc:
+            print(f"Received ModbusException({exc}) from library, retrying")
+            continue
 
-    except ModbusException as exc:
-        print(f"Received ModbusException({exc}) from library")
-        ## keep retrying
-        while True:
-            time.sleep(5)
-            rr = await client.write_coil(1, True)
-            ## awaiting to see if the coil is shutdown
-            print(rr)
-            print("restarting")
-    if rr.isError():
-        print(f"Received Modbus library error({rr})")
-        client.close()
-        return
-    if isinstance(rr, ExceptionResponse):
-        print(f"Received Modbus library exception ({rr})")
-        # THIS IS NOT A PYTHON EXCEPTION, but a valid modbus message
-        client.close()
+        if rr.isError():
+            print(f"Received Modbus library error({rr}), retrying")
+            continue
+        if isinstance(rr, ExceptionResponse):
+            # THIS IS NOT A PYTHON EXCEPTION, but a valid modbus message
+            print(f"Received Modbus library exception ({rr}), retrying")
+            continue
 
-    print("close connection")
-    #client.close()
+        print(rr)
+        print("restarting")
 
 
 if __name__ == "__main__":
     time.sleep(5)
     asyncio.run(
-       # run_async_slave("tcp", "127.0.0.1", 502), debug=False
-       run_async_slave("tcp", "172.20.0.3", 502), debug=False
+        run_async_master("tcp", os.environ.get("SLAVE_HOST", "slave"), 502),
+        debug=False,
     )

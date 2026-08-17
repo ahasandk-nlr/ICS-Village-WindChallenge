@@ -1,3 +1,13 @@
+networks:
+  default:
+    # Explicit subnet (rather than an auto-picked one) so audit-sidecar/
+    # can attach with a known, stable IP and self-identify which challenge
+    # network it's listening on. See docs/ADMIN.md's sidecar section and
+    # audit-sidecar/README.md.
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+
 services:
   rtu:
     image: ghcr.io/patsec/ot-sim/ot-sim:main
@@ -16,6 +26,20 @@ services:
     ports:
       - "20000:20000"
   vizhelper:
-    image: python:3.13-rc
+    build: .
+    depends_on:
+      - rtu
+      - ied
+    restart: on-failure
+    environment:
+      RTU_HOST: rtu
+      RTU_API_PORT: "9101"
+      IED_HOST: ied
+      IED_API_PORT: "9102"
+      # viz's Mosquitto broker lives in a separate compose project and is
+      # reached via its host-published port, not a shared Docker network.
+      MQTT_BROKER_HOST: host.docker.internal
+      MQTT_BROKER_PORT: "1883"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
-  

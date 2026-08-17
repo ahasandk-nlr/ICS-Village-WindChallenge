@@ -12,10 +12,59 @@ services:
     networks:
       my_network:
         ipv4_address: 172.20.0.3
+    environment:
+      # Which GPIO pin changeON() drives - see docs/PINOUT_MAP.md CH3
+      # (BCM12 / physical pin 32).
+      RELAY_PIN: "12"
+      # viz's Mosquitto broker lives in a separate compose project and is
+      # reached via its host-published port, same pattern used for
+      # bh-intellirupter/dnpchallenge.
+      MQTT_BROKER_HOST: host.docker.internal
+      MQTT_BROKER_PORT: "1883"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Real GPIO passthrough for the Pi. Off a Pi, /dev/gpiomem doesn't
+    # exist - Docker will bind-mount an empty placeholder directory
+    # instead of failing, so this is safe to leave in for simulation too;
+    # slave.py's GPIO mock fallback (see slave/slave.py) handles the rest.
+    privileged: true
+    volumes:
+      - /dev/gpiomem:/dev/gpiomem
+  # In-network attacker box: master/slave's Modbus conversation lives
+  # entirely on `my_network`, which never reaches a physical wire (see
+  # docs/AUDIT.md Part 3) - a participant's own laptop has no way to get a
+  # NIC onto this segment to run Ettercap themselves. This container joins
+  # the same network and exposes a real shell (over a browser-based
+  # terminal, no SSH keys/docker exec access needed) so participants can
+  # run genuine ARP-spoofing/Ettercap filters against master<->slave from
+  # inside the segment, instead of losing that mechanic entirely. See
+  # attacker/README.md.
+  attacker:
+    build:
+      context: .
+      dockerfile: attacker/Dockerfile
+    depends_on:
+      - master
+      - slave
+    networks:
+      my_network:
+        ipv4_address: 172.20.0.10
+    # NET_ADMIN/NET_RAW alone aren't enough: Ettercap writes to
+    # /proc/sys/net/ipv6/conf/all/forwarding as part of its own startup
+    # safety routine, and /proc/sys stays read-only under Docker's default
+    # profile even with those capabilities added - confirmed directly
+    # (Ettercap failed with "Read-only file system" on that path with just
+    # cap_add). privileged: true is the accepted tradeoff here, since this
+    # container's entire purpose is running exactly this class of
+    # low-level network attack tooling.
+    privileged: true
+    sysctls:
+      - net.ipv4.ip_forward=1
+    ports:
+      - "7681:7681"
 networks:
   my_network:
     driver: bridge
     ipam:
       config:
         - subnet: 172.20.0.0/16
-
