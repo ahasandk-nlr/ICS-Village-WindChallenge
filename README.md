@@ -194,6 +194,13 @@ x86 host) with `CHALLENGES="dnpchallenge mitm-modbus mqtthelper re-challenge" ./
 note that `audit-sidecar` references every challenge network, so trim it too if you skip
 one.
 
+Bring up only one challenge and related containers by using the command make up-<challenge-name>.
+For example to bring up only the re-challenge, use the following command:
+
+```bash
+make up-re-challenge
+``` 
+
 Recommended order for standing up the environment:
 
 1. **`viz`** — start the dashboard + MQTT broker first so other challenges have somewhere

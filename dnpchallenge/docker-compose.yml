@@ -12,6 +12,9 @@ services:
   rtu:
     #image: ghcr.io/patsec/ot-sim/ot-sim:main
     image: ot-sim:rpi
+    build:
+      context: .
+      dockerfile: Dockerfile.rpigpio
     privileged: true
     volumes:
       - ./rtuconfig.xml:/etc/ot-sim/config.xml
